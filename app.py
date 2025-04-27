@@ -15,15 +15,28 @@ st.set_page_config(
     layout="wide"
 )
 
+# Initialize session state for persistence
+if 'current_state' not in st.session_state:
+    st.session_state.current_state = {
+        'analysis_complete': False,
+        'response_dict': None,
+        'github_data': None,
+        'include_github': False,
+        'resume_text': None,
+        'jd_text': None
+    }
+
 # Load environment variables
 load_dotenv()
 genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
 
+@st.cache_data(ttl=3600)  # Cache for 1 hour
 def get_gemini_response(input_prompt):
     model = genai.GenerativeModel('gemini-1.5-flash')
     response = model.generate_content(input_prompt)
     return response.text
 
+@st.cache_data(ttl=3600)
 def input_pdf_text(uploaded_file):
     reader = pdf.PdfReader(uploaded_file)
     text = ""
@@ -31,6 +44,11 @@ def input_pdf_text(uploaded_file):
         page = reader.pages[page]
         text += str(page.extract_text())
     return text
+
+@st.cache_data(ttl=3600)
+def fetch_github_data(username):
+    github_fetcher = GithubRepoFetcher(username)
+    return github_fetcher.fetch_repo_info()
 
 # Prompt templates
 ats_prompt = """
@@ -299,7 +317,61 @@ def display_results(response_dict, github_data=None, include_github=False):
     # Display improvement suggestions
     display_improvement_suggestions(response_dict, github_data)
 
-# Main UI
+def process_resume(text, jd, github_username=None):
+    """Process the resume and store results in session state"""
+    try:
+        if github_username:
+            # Workflow 2: Include GitHub analysis
+            with st.spinner("Fetching GitHub data..."):
+                github_data = fetch_github_data(github_username)
+                if not github_data:
+                    st.warning(f"No public repositories found for user {github_username}")
+                    response = get_gemini_response(
+                        ats_prompt.format(
+                            text=text,
+                            jd=jd
+                        )
+                    )
+                else:
+                    response = get_gemini_response(
+                        github_analysis_prompt.format(
+                            text=text,
+                            jd=jd,
+                            github_data=json.dumps(github_data)
+                        )
+                    )
+                st.session_state.current_state['github_data'] = github_data
+        else:
+            # Workflow 1: Basic ATS analysis
+            response = get_gemini_response(
+                ats_prompt.format(
+                    text=text,
+                    jd=jd
+                )
+            )
+            st.session_state.current_state['github_data'] = None
+
+        # Clean and parse the response
+        response = response.strip()
+        if response.startswith("```json"):
+            response = response[7:-3]
+        
+        response_dict = json.loads(response)
+        
+        # Update session state
+        st.session_state.current_state.update({
+            'analysis_complete': True,
+            'response_dict': response_dict,
+            'include_github': bool(github_username),
+            'resume_text': text,
+            'jd_text': jd
+        })
+        
+        return True
+    except Exception as e:
+        st.error(f"Error during analysis: {str(e)}")
+        return False
+
 def main():
     # Sidebar
     with st.sidebar:
@@ -311,9 +383,22 @@ def main():
         github_username = st.text_input("GitHub Username (Optional)")
         
         submit = st.button("Analyze")
+        clear = st.button("Clear Results")
+
+        if clear:
+            # Reset session state
+            st.session_state.current_state = {
+                'analysis_complete': False,
+                'response_dict': None,
+                'github_data': None,
+                'include_github': False,
+                'resume_text': None,
+                'jd_text': None
+            }
+            st.rerun()
 
     # Main content area
-    if not submit:
+    if not st.session_state.current_state['analysis_complete'] and not submit:
         # Landing page content
         st.title("🚀 Welcome to Smart ATS")
         st.markdown("""
@@ -328,62 +413,23 @@ def main():
         """)
         return
 
-    if not uploaded_file or not jd:
-        st.error("Please upload your resume and provide the job description.")
-        return
+    if submit:
+        if not uploaded_file or not jd:
+            st.error("Please upload your resume and provide the job description.")
+            return
+        
+        with st.spinner("Analyzing your resume..."):
+            text = input_pdf_text(uploaded_file)
+            if process_resume(text, jd, github_username):
+                st.rerun()
 
-    with st.spinner("Analyzing your resume..."):
-        text = input_pdf_text(uploaded_file)
-        github_data = None
-        
-        if github_username:
-            # Workflow 2: Include GitHub analysis
-            try:
-                with st.spinner("Fetching GitHub data..."):
-                    github_fetcher = GithubRepoFetcher(github_username)
-                    github_data = github_fetcher.fetch_repo_info()
-                    if not github_data:
-                        st.warning(f"No public repositories found for user {github_username}")
-                        response = get_gemini_response(
-                            ats_prompt.format(
-                                text=text,
-                                jd=jd
-                            )
-                        )
-                    else:
-                        response = get_gemini_response(
-                            github_analysis_prompt.format(
-                                text=text,
-                                jd=jd,
-                                github_data=json.dumps(github_data)
-                            )
-                        )
-            except Exception as e:
-                st.error(f"Error fetching GitHub data: {str(e)}")
-                return
-        else:
-            # Workflow 1: Basic ATS analysis
-            response = get_gemini_response(
-                ats_prompt.format(
-                    text=text,
-                    jd=jd
-                )
-            )
-        
-        try:
-            # Clean the response string
-            response = response.strip()
-            if response.startswith("```json"):
-                response = response[7:-3]
-            
-            response_dict = json.loads(response)
-            display_results(response_dict, github_data, bool(github_username))
-            
-        except json.JSONDecodeError as e:
-            st.error("Error parsing the response. Please try again.")
-            with st.expander("Show detailed error"):
-                st.code(response)
-                st.text(str(e))
+    # Display results if analysis is complete
+    if st.session_state.current_state['analysis_complete']:
+        display_results(
+            st.session_state.current_state['response_dict'],
+            st.session_state.current_state['github_data'],
+            st.session_state.current_state['include_github']
+        )
 
 if __name__ == "__main__":
     main()
