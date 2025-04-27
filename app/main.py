@@ -45,7 +45,10 @@ def main():
         with st.spinner("Analyzing your resume..."):
             # Extract text from PDF
             logger.debug(f"Processing PDF file: {uploaded_file.name}")
+            logger.info("Extracting text from PDF")
+
             text = extract_text_from_pdf(uploaded_file)
+
             if not text:
                 logger.error("Failed to extract text from PDF")
                 st.error("Could not extract text from the PDF. Please check the file.")
@@ -62,6 +65,7 @@ def main():
                         st.warning(f"No public repositories found for user {github_username}")
             
             # Process the resume and update state
+            logger.info("Analyzing resume")
             response = analyze_resume(text, jd, github_username if github_data else None)
             if response:
                 try:
