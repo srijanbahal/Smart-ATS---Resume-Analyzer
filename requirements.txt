@@ -5,3 +5,5 @@ python-dotenv>=1.0.0
 plotly>=5.13.0
 pandas>=2.0.0
 requests>=2.31.0
+crewai>=0.20.6
+crewai_tools>=0.10.0
