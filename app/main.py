@@ -8,6 +8,9 @@ from models.gemini import analyze_resume
 from components.display import display_results
 from components.sidebar import render_sidebar
 from utils.logging_utils import default_logger as logger
+import sys
+sys.path.append(os.path.join(os.path.dirname(__file__), 'utils'))
+from utils.rag_utils import RAGSystem
 
 def main():
     # Setup page and initialize session state
@@ -34,6 +37,13 @@ def main():
         **Plus:** Add your GitHub username for comprehensive project analysis!
         """)
         return
+    
+
+    # Implementing the RAG here. Uploaded file and the JD and the Github data
+    # now combine them and convert them into embeddings using openAI embeddings and
+    # Now Store them to FAISS and then Retrieve using a Retriever and then another 
+    # Generator passing the reterieved context to the LLM and then the llm responds in the chat section.
+    
 
     if submit:
         if not uploaded_file or not jd:
@@ -74,7 +84,9 @@ def main():
                         'analysis_complete': True,
                         'response_dict': response_dict,
                         'github_data': github_data['repositories'] if github_data else None,
-                        'include_github': bool(github_data)
+                        'include_github': bool(github_data),
+                        'resume_text': text,
+                        'jd_text': jd
                     })
                 except Exception as e:
                     logger.error(f"Failed to parse analysis response: {str(e)}")
@@ -89,6 +101,35 @@ def main():
             st.session_state.current_state['github_data'],
             st.session_state.current_state['include_github']
         )
+
+        # --- RAG Chat Section ---
+        st.markdown("---")
+        st.header("💬 Ask Questions (RAG Chat)")
+        if 'rag_system' not in st.session_state:
+            rag = RAGSystem()
+            rag.process_documents(
+                st.session_state.current_state['resume_text'],
+                st.session_state.current_state['jd_text'],
+                {'repositories': st.session_state.current_state['github_data']} if st.session_state.current_state['include_github'] else None
+            )
+            rag.create_embeddings_and_index()
+            st.session_state['rag_system'] = rag
+        else:
+            rag = st.session_state['rag_system']
+
+        if 'rag_chat_history' not in st.session_state:
+            st.session_state['rag_chat_history'] = []
+
+        user_message = st.text_input("Ask a question about your resume, job description, or GitHub profile:")
+        if st.button("Ask") and user_message:
+            with st.spinner("Retrieving answer..."):
+                answer = rag.chat_with_rag(user_message)
+                st.session_state['rag_chat_history'].append((user_message, answer))
+
+        # Display chat history
+        for user_msg, answer in st.session_state['rag_chat_history']:
+            st.markdown(f"**You:** {user_msg}")
+            st.markdown(f"**AI:** {answer}")
 
 if __name__ == "__main__":
     main() 
