@@ -1,14 +1,35 @@
 from crewai import Task
-from agents.researcher import researcher
+from app.agents.JobResearcher import researcher
+
 
 research_task = Task(
-    description=(
-        "Analyze the job posting URL provided ({job_posting_url}) to extract key skills, experiences, and qualifications required. "
-        "Use the tools to gather content and identify and categorize the requirements."
-    ),
-    expected_output=(
-        "A structured list of job requirements, including necessary skills, qualifications, and experiences."
-    ),
-    agent=researcher,
-    async_execution=True
+    description="""Research the job position and company comprehensively:
+    
+    Job Details to Research:
+    - Job title, responsibilities, and requirements
+    - Required technical skills and experience level
+    - Preferred qualifications and nice-to-haves
+    - Salary range and benefits (if available)
+    
+    Company Research:
+    - Company mission, values, and culture
+    - Recent news, achievements, and challenges
+    - Company size, industry, and market position
+    - Technology stack and tools used
+    - Leadership team and key personnel
+    - Interview process and company reviews
+    
+    Industry Context:
+    - Current industry trends and challenges
+    - Competitive landscape
+    - Skills in high demand
+    
+    Provide a comprehensive research report that will serve as the foundation 
+    for all subsequent team analysis.""",
+    expected_output="""Detailed research report containing:
+    1. Complete job analysis with requirements breakdown
+    2. Comprehensive company profile and culture analysis  
+    3. Industry context and trends
+    4. Key insights for candidate positioning""",
+    agent=job_researcher
 )

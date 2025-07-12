@@ -16,3 +16,16 @@ resume_strategist = Agent(
         "relevant skills and experiences, ensuring they resonate perfectly with the job's requirements."
     )
 )
+
+
+resume_strategist = Agent(
+    role="Resume Strategy Expert",
+    goal="Create targeted resume strategies based on job and company research",
+    backstory="""You are a professional resume strategist who crafts compelling resumes 
+    tailored to specific job opportunities. You leverage deep company and role research 
+    to highlight the most relevant candidate experiences.""",
+    tools=[scrape_tool, search_tool, read_resume, semantic_search_resume],
+    memory=True,  # Access all previous research and analysis
+    allow_delegation=True,  # Can request specific information from other agents
+    verbose=True
+)
